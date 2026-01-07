@@ -1,7 +1,81 @@
-# Tauri + Vue + TypeScript
+# Modbus TCP Slave Simulator (Tauri + Vue + Rust)
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Этот проект — настольное приложение на базе **Tauri**, **Vue 3** и **Rust**, которое эмулирует **Modbus TCP slave**‑устройство (сервер).  
+Его задача — принимать запросы от Modbus TCP мастера (SCADA, ПЛК, модбас‑клиента) и отвечать на них так, как будто это реальное устройство.
 
-## Recommended IDE Setup
+## Основные возможности (план)
 
-- [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- Эмуляция Modbus TCP slave:
+  - прослушивание выбранного TCP‑порта (обычно 502 или пользовательский);
+  - работа с указанным **Unit ID (Slave ID)**;
+  - корректная обработка Modbus TCP запросов мастера.
+
+- Настройка устройства:
+  - задание параметров эмулируемого устройства:
+    - название профиля;
+    - IP/host (для справки / выбора интерфейса);
+    - порт;
+    - Unit ID;
+  - сохранение настроек локально и автоматическое восстановление при следующем запуске.
+
+- Конфигурация переменных (регистров/коилов):
+  - задание списка переменных (coils, discrete inputs, input registers, holding registers);
+  - указание адресов, типов данных, масштабов, единиц измерения и т.д.;
+  - управление значениями переменных (ручное изменение, сценарии имитации и пр.) — планируется.
+
+## Технологии
+
+- **Frontend**:
+  - [Vue 3](https://vuejs.org/) + `<script setup>` + TypeScript
+  - [Vite](https://vite.dev/) для сборки фронтенда
+
+- **Desktop‑обёртка**:
+  - [Tauri 2](https://tauri.app/) — лёгкая кроссплатформенная оболочка
+
+- **Backend / логика Modbus**:
+  - Язык **Rust**
+  - Реализация Modbus TCP сервера и таблиц регистров
+
+## Текущее состояние
+
+На данном этапе реализовано:
+
+- Базовый интерфейс Tauri + Vue.
+- Главный экран с формой редактирования профиля подключения (`ModbusConnectionProfile`):
+  - название профиля;
+  - IP/host;
+  - порт;
+  - Unit ID;
+  - сохранение настроек в локальное хранилище (localStorage).
+
+Следующие шаги (в разработке):
+
+1. Модель переменных (`ModbusVariable`) и UI для их настройки.
+2. Реализация Modbus TCP сервера на Rust с учётом настроек профиля.
+3. Связка фронтенда (таблица переменных) с сервером (чтение/запись регистров).
+
+## Запуск проекта
+
+Требования:
+
+- Установленный **Rust** (через `rustup`).
+- Node.js и npm.
+
+Команды разработки:
+
+```bash
+# установить зависимости
+npm install
+
+# запустить приложение в режиме разработки
+npm run tauri dev
+
+# собрать релизную версию приложения
+npm run tauri build
+```
+
+## Цели проекта
+
+- Удобный инструмент для отладки и тестирования Modbus TCP мастеров (SCADA, ПЛК, ПО).
+- Возможность быстро эмулировать поведение Modbus‑устройства без реального железа.
+- Платформонезависимое приложение с небольшим размером и минимальными зависимостями (благодаря Tauri и Rust).
