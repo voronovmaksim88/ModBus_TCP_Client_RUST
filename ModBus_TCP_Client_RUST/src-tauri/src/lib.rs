@@ -1,7 +1,7 @@
-//! Modbus TCP Slave Simulator - Tauri Application
+//! Modbus TCP Slave Simulator — Tauri-приложение
 //!
-//! This is the main library entry point that sets up the Tauri application
-//! with all necessary modules and commands.
+//! Это главная точка входа библиотеки, которая настраивает Tauri-приложение
+//! со всеми необходимыми модулями и командами.
 
 mod commands;
 mod data_store;
@@ -13,24 +13,24 @@ use commands::AppState;
 use data_store::create_shared_data_store;
 use server::create_shared_server;
 
-/// Initialize and run the Tauri application.
+/// Инициализация и запуск Tauri-приложения.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize logger
+    // Инициализируем логгер
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    log::info!("Starting Modbus TCP Slave Simulator");
+    log::info!("Запуск Modbus TCP Slave Simulator");
 
-    // Create shared data store
+    // Создаём общее хранилище данных для регистров и коилов
     let data_store = create_shared_data_store();
 
-    // Create shared server
+    // Создаём общий экземпляр Modbus TCP сервера
     let server = create_shared_server(data_store.clone());
 
-    // Create app state
+    // Создаём состояние приложения, которое будет доступно во всех командах
     let app_state = AppState { server, data_store };
 
-    // Build and run Tauri application
+    // Собираем и запускаем Tauri-приложение
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(app_state)
@@ -44,5 +44,5 @@ pub fn run() {
             commands::clear_data_store,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("Ошибка при запуске Tauri-приложения");
 }
