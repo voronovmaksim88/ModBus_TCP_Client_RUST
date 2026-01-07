@@ -1,7 +1,7 @@
 [package]
 name = "modbus_tcp_client_rust"
 version = "0.1.0"
-description = "A Tauri App"
+description = "Modbus TCP Slave Simulator"
 authors = ["you"]
 edition = "2021"
 
@@ -23,3 +23,12 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Async runtime for TCP server
+tokio = { version = "1", features = ["full"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Synchronization primitives
+parking_lot = "0.12"

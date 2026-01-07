@@ -2,6 +2,60 @@
     <main class="container">
         <h1 class="title">Modbus TCP Slave Simulator</h1>
 
+        <!-- Управление сервером -->
+        <section class="card server-control-card">
+            <header class="card-header">
+                <h2 class="card-title">Управление эмулятором</h2>
+            </header>
+
+            <div class="server-status-row">
+                <div
+                    class="status-indicator"
+                    :class="serverStatus.running ? 'running' : 'stopped'"
+                >
+                    <span class="status-dot"></span>
+                    <span class="status-text">
+                        {{ serverStatus.running ? "Запущен" : "Остановлен" }}
+                    </span>
+                </div>
+
+                <div v-if="serverStatus.running" class="status-details">
+                    <span>{{ serverStatus.host }}:{{ serverStatus.port }}</span>
+                    <span>Unit ID: {{ serverStatus.unitId }}</span>
+                    <span
+                        >Подключений: {{ serverStatus.connectionsCount }}</span
+                    >
+                </div>
+            </div>
+
+            <div v-if="serverStatus.error" class="server-error">
+                {{ serverStatus.error }}
+            </div>
+
+            <div class="server-actions">
+                <button
+                    v-if="!serverStatus.running"
+                    class="btn primary"
+                    type="button"
+                    :disabled="serverLoading"
+                    @click="onStartServer"
+                >
+                    {{ serverLoading ? "Запуск..." : "▶ Запустить эмулятор" }}
+                </button>
+                <button
+                    v-else
+                    class="btn danger"
+                    type="button"
+                    :disabled="serverLoading"
+                    @click="onStopServer"
+                >
+                    {{
+                        serverLoading ? "Остановка..." : "■ Остановить эмулятор"
+                    }}
+                </button>
+            </div>
+        </section>
+
         <!-- Профиль подключения -->
         <section class="card">
             <header class="card-header">
@@ -190,21 +244,28 @@
                                     <option value="float32">float32</option>
                                 </select>
                             </td>
-                            <td>
+                            <td
+                                class="value-cell"
+                                :class="{
+                                    'value-changed': recentlyChangedIds.has(
+                                        variable.id,
+                                    ),
+                                }"
+                            >
                                 <!-- Поле значения: интерпретация по dataType -->
                                 <input
                                     v-if="variable.dataType === 'bool'"
                                     v-model="variable.value"
                                     type="checkbox"
                                     class="cell-checkbox"
-                                    @change="persistProject"
+                                    @change="onVariableValueChange(variable)"
                                 />
                                 <input
                                     v-else
                                     v-model.number="variable.value"
                                     type="number"
                                     class="cell-input cell-input-number"
-                                    @change="persistProject"
+                                    @change="onVariableValueChange(variable)"
                                 />
                             </td>
 
@@ -253,7 +314,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+
+/**
+ * Значение переменной (зеркало Rust ModbusValue)
+ */
+type ModbusValue = boolean | number | null;
 
 /**
  * Типы данных для профиля подключения.
@@ -321,6 +388,29 @@ interface ModbusProject {
 const STORAGE_KEY = "modbus_project_v1";
 
 /**
+ * Server status interface (mirrors Rust ServerStatus)
+ */
+interface ServerStatus {
+    running: boolean;
+    host: string;
+    port: number;
+    unitId: number;
+    connectionsCount: number;
+    error: string | null;
+}
+
+function createDefaultServerStatus(): ServerStatus {
+    return {
+        running: false,
+        host: "0.0.0.0",
+        port: 502,
+        unitId: 1,
+        connectionsCount: 0,
+        error: null,
+    };
+}
+
+/**
  * Значения по умолчанию для проекта, профиля и переменных
  */
 function createDefaultProfile(): ModbusConnectionProfile {
@@ -373,6 +463,19 @@ const validationError = ref<string | null>(null);
 const lastSavedAt = ref<string | null>(null);
 
 /**
+ * Server state
+ */
+const serverStatus = reactive<ServerStatus>(createDefaultServerStatus());
+const serverLoading = ref(false);
+let statusPollInterval: number | null = null;
+let variablesPollInterval: number | null = null;
+
+/**
+ * Набор ID переменных, значения которых недавно изменились (для подсветки).
+ */
+const recentlyChangedIds = reactive(new Set<string>());
+
+/**
  * Текущий выбранный профиль
  */
 const currentProfile = computed<ModbusConnectionProfile | null>(() => {
@@ -406,7 +509,37 @@ const isProfileDirty = computed(() => {
 /**
  * Загрузка проекта из localStorage при старте
  */
-onMounted(() => {
+onMounted(async () => {
+    // Получить начальный статус сервера
+    try {
+        const status = await invoke<ServerStatus>("get_server_status");
+        Object.assign(serverStatus, status);
+    } catch (e) {
+        console.error("Failed to get server status:", e);
+    }
+
+    // Запустить периодический опрос статуса
+    statusPollInterval = window.setInterval(async () => {
+        try {
+            const status = await invoke<ServerStatus>("get_server_status");
+            Object.assign(serverStatus, status);
+        } catch (e) {
+            // Ignore polling errors
+        }
+    }, 2000);
+
+    // Запустить периодический опрос переменных (когда сервер запущен)
+    variablesPollInterval = window.setInterval(async () => {
+        if (!serverStatus.running) {
+            return;
+        }
+        try {
+            await syncVariablesFromBackend();
+        } catch (e) {
+            // Ignore polling errors
+        }
+    }, 1000);
+
     try {
         const raw = window.localStorage.getItem(STORAGE_KEY);
         if (!raw) {
@@ -448,6 +581,81 @@ onMounted(() => {
         applyProfileToEditable(defProject.profiles[0]);
     }
 });
+
+/**
+ * Очистка при размонтировании
+ */
+onUnmounted(() => {
+    if (statusPollInterval !== null) {
+        clearInterval(statusPollInterval);
+        statusPollInterval = null;
+    }
+    if (variablesPollInterval !== null) {
+        clearInterval(variablesPollInterval);
+        variablesPollInterval = null;
+    }
+});
+
+/**
+ * Синхронизация значений переменных из бэкенда.
+ * Обновляет только поле value, чтобы не мешать редактированию других полей.
+ */
+async function syncVariablesFromBackend() {
+    const backendVars = await invoke<ModbusVariable[]>("get_variables");
+
+    // Создаём карту id -> value из бэкенда
+    const valueMap = new Map<string, ModbusValue>();
+    for (const v of backendVars) {
+        valueMap.set(v.id, v.value);
+    }
+
+    // Обновляем только значения в локальных переменных
+    for (const localVar of project.variables) {
+        const backendValue = valueMap.get(localVar.id);
+        if (backendValue !== undefined) {
+            // Обновляем значение только если оно отличается
+            if (
+                JSON.stringify(localVar.value) !== JSON.stringify(backendValue)
+            ) {
+                localVar.value = backendValue;
+
+                // Подсветить изменённую переменную
+                highlightChangedVariable(localVar.id);
+            }
+        }
+    }
+}
+
+/**
+ * Подсветить переменную как недавно изменённую.
+ * Подсветка автоматически снимается через 1.5 секунды.
+ */
+function highlightChangedVariable(id: string) {
+    recentlyChangedIds.add(id);
+    setTimeout(() => {
+        recentlyChangedIds.delete(id);
+    }, 1500);
+}
+
+/**
+ * Обработчик изменения значения переменной пользователем.
+ * Сохраняет в localStorage и отправляет на бэкенд (если сервер запущен).
+ */
+async function onVariableValueChange(variable: ModbusVariable) {
+    persistProject();
+
+    // Если сервер запущен, отправляем обновлённое значение на бэкенд
+    if (serverStatus.running) {
+        try {
+            await invoke("update_variable", {
+                id: variable.id,
+                value: variable.value,
+            });
+        } catch (e) {
+            console.error("Failed to update variable on backend:", e);
+        }
+    }
+}
 
 /**
  * Помощник для замены содержимого reactive project
@@ -624,6 +832,57 @@ function onVariableAddressChange(variable: ModbusVariable) {
     }
     persistProject();
 }
+
+/**
+ * Server control functions
+ */
+
+/**
+ * Запустить сервер эмулятора
+ */
+async function onStartServer() {
+    serverLoading.value = true;
+    serverStatus.error = null;
+
+    try {
+        // Получить текущий профиль
+        const profile = currentProfile.value;
+        if (!profile) {
+            throw new Error("Профиль подключения не выбран");
+        }
+
+        // Запустить сервер с текущим профилем и переменными
+        const status = await invoke<ServerStatus>("start_server", {
+            profile: profile,
+            variables: project.variables,
+        });
+
+        Object.assign(serverStatus, status);
+    } catch (e) {
+        serverStatus.error = String(e);
+        console.error("Failed to start server:", e);
+    } finally {
+        serverLoading.value = false;
+    }
+}
+
+/**
+ * Остановить сервер эмулятора
+ */
+async function onStopServer() {
+    serverLoading.value = true;
+    serverStatus.error = null;
+
+    try {
+        const status = await invoke<ServerStatus>("stop_server");
+        Object.assign(serverStatus, status);
+    } catch (e) {
+        serverStatus.error = String(e);
+        console.error("Failed to stop server:", e);
+    } finally {
+        serverLoading.value = false;
+    }
+}
 </script>
 
 <style scoped>
@@ -656,6 +915,76 @@ function onVariableAddressChange(variable: ModbusVariable) {
 
 .variables-card {
     margin-top: 0.25rem;
+}
+
+/* Server control styles */
+.server-control-card {
+    border-left: 4px solid #666;
+}
+
+.server-control-card.running {
+    border-left-color: #4caf50;
+}
+
+.server-status-row {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: #888;
+}
+
+.status-indicator.running .status-dot {
+    background-color: #4caf50;
+    box-shadow: 0 0 6px #4caf50;
+}
+
+.status-indicator.stopped .status-dot {
+    background-color: #888;
+}
+
+.status-indicator.running .status-text {
+    color: #4caf50;
+}
+
+.status-indicator.stopped .status-text {
+    color: #666;
+}
+
+.status-details {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.9rem;
+    color: #555;
+}
+
+.server-error {
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    background-color: #ffecec;
+    color: #b00020;
+    font-size: 0.9rem;
+}
+
+.server-actions {
+    display: flex;
+    gap: 0.6rem;
 }
 
 .card-header {
@@ -877,6 +1206,24 @@ function onVariableAddressChange(variable: ModbusVariable) {
 .cell-checkbox {
     width: 16px;
     height: 16px;
+}
+
+.value-cell {
+    transition: background-color 0.3s ease;
+}
+
+.value-cell.value-changed {
+    background-color: #fff3cd !important;
+    animation: pulse-highlight 0.5s ease-in-out;
+}
+
+@keyframes pulse-highlight {
+    0% {
+        background-color: #ffc107;
+    }
+    100% {
+        background-color: #fff3cd;
+    }
 }
 
 .cell-center {
