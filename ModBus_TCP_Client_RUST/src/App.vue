@@ -310,17 +310,103 @@
                 </button>
             </div>
         </section>
+
+        <!-- Логирование запросов -->
+        <section class="card logs-card">
+            <header class="card-header logs-header">
+                <div class="logs-title-row">
+                    <h2 class="card-title">Логирование запросов</h2>
+                    <span class="logs-count"
+                        >{{ logEntries.length }} записей</span
+                    >
+                </div>
+                <div class="logs-actions">
+                    <button
+                        class="btn small secondary"
+                        type="button"
+                        @click="onClearLogs"
+                        :disabled="logEntries.length === 0"
+                    >
+                        🗑 Очистить
+                    </button>
+                </div>
+            </header>
+
+            <div class="logs-container" ref="logsContainerRef">
+                <div
+                    v-for="entry in logEntries"
+                    :key="entry.id"
+                    class="log-entry"
+                    :class="getLogEntryClass(entry)"
+                >
+                    <div class="log-entry-header">
+                        <span class="log-time">{{
+                            formatLogTime(entry.timestamp)
+                        }}</span>
+                        <span class="log-type" :class="entry.entryType">
+                            {{ getLogTypeLabel(entry.entryType) }}
+                        </span>
+                        <span v-if="entry.functionName" class="log-function">
+                            {{ entry.functionName }}
+                            <span class="log-function-code"
+                                >(0x{{
+                                    entry.functionCode
+                                        ?.toString(16)
+                                        .padStart(2, "0")
+                                        .toUpperCase()
+                                }})</span
+                            >
+                        </span>
+                        <span class="log-client">{{ entry.clientAddr }}</span>
+                        <span v-if="entry.durationUs" class="log-duration">
+                            {{ (entry.durationUs / 1000).toFixed(2) }} ms
+                        </span>
+                    </div>
+                    <div class="log-entry-summary">{{ entry.summary }}</div>
+                    <div v-if="entry.rawData" class="log-entry-raw">
+                        <span class="raw-label">HEX:</span>
+                        <code>{{ entry.rawData }}</code>
+                    </div>
+                </div>
+
+                <div v-if="logEntries.length === 0" class="logs-empty">
+                    Логи пусты. Запустите эмулятор и подключите
+                    мастер-устройство.
+                </div>
+            </div>
+        </section>
     </main>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 /**
  * Значение переменной (зеркало Rust ModbusValue)
  */
 type ModbusValue = boolean | number | null;
+
+/**
+ * Тип записи лога
+ */
+type LogEntryType = "request" | "response" | "error" | "info";
+
+/**
+ * Запись лога (зеркало Rust LogEntry)
+ */
+interface LogEntry {
+    id: number;
+    timestamp: string;
+    entryType: LogEntryType;
+    clientAddr: string;
+    functionCode?: number;
+    functionName?: string;
+    summary: string;
+    rawData?: string;
+    durationUs?: number;
+}
 
 /**
  * Типы данных для профиля подключения.
@@ -476,6 +562,18 @@ let variablesPollInterval: number | null = null;
 const recentlyChangedIds = reactive(new Set<string>());
 
 /**
+ * Записи логов
+ */
+const logEntries = reactive<LogEntry[]>([]);
+const logsContainerRef = ref<HTMLElement | null>(null);
+let logUnlisten: UnlistenFn | null = null;
+
+/**
+ * Максимальное количество записей в логе
+ */
+const MAX_LOG_ENTRIES = 500;
+
+/**
  * Текущий выбранный профиль
  */
 const currentProfile = computed<ModbusConnectionProfile | null>(() => {
@@ -510,6 +608,15 @@ const isProfileDirty = computed(() => {
  * Загрузка проекта из localStorage при старте
  */
 onMounted(async () => {
+    // Подписываемся на события логирования от Rust
+    try {
+        logUnlisten = await listen<LogEntry>("modbus-log", (event) => {
+            addLogEntry(event.payload);
+        });
+    } catch (e) {
+        console.error("Failed to listen for log events:", e);
+    }
+
     // Получить начальный статус сервера
     try {
         const status = await invoke<ServerStatus>("get_server_status");
@@ -594,6 +701,10 @@ onUnmounted(() => {
         clearInterval(variablesPollInterval);
         variablesPollInterval = null;
     }
+    if (logUnlisten) {
+        logUnlisten();
+        logUnlisten = null;
+    }
 });
 
 /**
@@ -655,6 +766,71 @@ async function onVariableValueChange(variable: ModbusVariable) {
             console.error("Failed to update variable on backend:", e);
         }
     }
+}
+
+/**
+ * Logging functions
+ */
+
+/**
+ * Добавить запись в лог
+ */
+function addLogEntry(entry: LogEntry) {
+    logEntries.unshift(entry);
+
+    // Ограничиваем размер лога
+    if (logEntries.length > MAX_LOG_ENTRIES) {
+        logEntries.pop();
+    }
+}
+
+/**
+ * Очистить все логи
+ */
+function onClearLogs() {
+    logEntries.length = 0;
+}
+
+/**
+ * Получить CSS-класс для записи лога
+ */
+function getLogEntryClass(entry: LogEntry): string {
+    return `log-${entry.entryType}`;
+}
+
+/**
+ * Получить человекочитаемую метку типа лога
+ */
+function getLogTypeLabel(type: LogEntryType): string {
+    switch (type) {
+        case "request":
+            return "→ REQ";
+        case "response":
+            return "← RES";
+        case "error":
+            return "✕ ERR";
+        case "info":
+            return "ℹ INFO";
+        default:
+            return type;
+    }
+}
+
+/**
+ * Форматировать время лога
+ */
+function formatLogTime(timestamp: string): string {
+    // timestamp приходит как "секунды.миллисекунды" с эпохи
+    const parts = timestamp.split(".");
+    const secs = parseInt(parts[0], 10);
+    const millis = parts[1] || "000";
+
+    const date = new Date(secs * 1000);
+    const hours = date.getHours().toString().padStart(2, "0");
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    const seconds = date.getSeconds().toString().padStart(2, "0");
+
+    return `${hours}:${minutes}:${seconds}.${millis}`;
 }
 
 /**
@@ -1245,6 +1421,169 @@ async function onStopServer() {
     margin-top: 0.7rem;
     display: flex;
     justify-content: flex-start;
+}
+
+/* Logging panel styles */
+.logs-card {
+    margin-top: 0.5rem;
+}
+
+.logs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.logs-title-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.logs-count {
+    font-size: 0.85rem;
+    color: #666;
+    font-weight: normal;
+}
+
+.logs-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.logs-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background-color: #fafafa;
+    font-family: "Consolas", "Monaco", "Courier New", monospace;
+    font-size: 0.82rem;
+}
+
+.log-entry {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #eee;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-entry:hover {
+    background-color: #f5f5f5;
+}
+
+.log-entry-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.25rem;
+}
+
+.log-time {
+    color: #888;
+    font-size: 0.8rem;
+}
+
+.log-type {
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.log-type.request {
+    background-color: #e3f2fd;
+    color: #1565c0;
+}
+
+.log-type.response {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+
+.log-type.error {
+    background-color: #ffebee;
+    color: #c62828;
+}
+
+.log-type.info {
+    background-color: #fff3e0;
+    color: #e65100;
+}
+
+.log-function {
+    font-weight: 500;
+    color: #333;
+}
+
+.log-function-code {
+    color: #888;
+    font-weight: normal;
+}
+
+.log-client {
+    color: #666;
+    font-size: 0.8rem;
+}
+
+.log-duration {
+    color: #888;
+    font-size: 0.8rem;
+    margin-left: auto;
+}
+
+.log-entry-summary {
+    color: #333;
+    margin-bottom: 0.2rem;
+}
+
+.log-entry-raw {
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 0.25rem;
+}
+
+.log-entry-raw .raw-label {
+    color: #999;
+    margin-right: 0.3rem;
+}
+
+.log-entry-raw code {
+    background-color: #f0f0f0;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    word-break: break-all;
+}
+
+.log-request {
+    border-left: 3px solid #1565c0;
+}
+
+.log-response {
+    border-left: 3px solid #2e7d32;
+}
+
+.log-error {
+    border-left: 3px solid #c62828;
+    background-color: #fff8f8;
+}
+
+.log-info {
+    border-left: 3px solid #e65100;
+}
+
+.logs-empty {
+    padding: 2rem;
+    text-align: center;
+    color: #888;
+    font-style: italic;
+    font-family: inherit;
 }
 
 @media (max-width: 768px) {

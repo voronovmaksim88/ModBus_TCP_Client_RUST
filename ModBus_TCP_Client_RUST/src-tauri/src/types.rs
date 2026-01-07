@@ -1,5 +1,5 @@
-//! Type definitions for Modbus TCP Slave Simulator.
-//! These types mirror the TypeScript models defined in the frontend.
+//! Определения типов для Modbus TCP Slave Simulator.
+//! Эти типы соответствуют TypeScript-моделям, определённым во фронтенде.
 
 #![allow(dead_code)]
 
@@ -221,5 +221,122 @@ impl Default for ServerStatus {
             connections_count: 0,
             error: None,
         }
+    }
+}
+
+/// Тип записи лога: запрос или ответ.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogEntryType {
+    /// Входящий запрос от мастера
+    Request,
+    /// Исходящий ответ слэйва
+    Response,
+    /// Ошибка обработки
+    Error,
+    /// Информационное сообщение (подключение/отключение)
+    Info,
+}
+
+/// Запись лога для отображения в UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogEntry {
+    /// Уникальный ID записи
+    pub id: u64,
+    /// Временная метка (ISO 8601)
+    pub timestamp: String,
+    /// Тип записи (request/response/error/info)
+    pub entry_type: LogEntryType,
+    /// IP-адрес клиента
+    pub client_addr: String,
+    /// Код функции Modbus (если применимо)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_code: Option<u8>,
+    /// Название функции (человекочитаемое)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_name: Option<String>,
+    /// Краткое описание запроса/ответа
+    pub summary: String,
+    /// Сырые данные в hex (опционально)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_data: Option<String>,
+    /// Время обработки в микросекундах (для ответов)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_us: Option<u64>,
+}
+
+impl LogEntry {
+    /// Создать новую запись лога.
+    pub fn new(id: u64, entry_type: LogEntryType, client_addr: String, summary: String) -> Self {
+        Self {
+            id,
+            timestamp: chrono_now_iso(),
+            entry_type,
+            client_addr,
+            function_code: None,
+            function_name: None,
+            summary,
+            raw_data: None,
+            duration_us: None,
+        }
+    }
+
+    /// Установить код и название функции.
+    pub fn with_function(mut self, code: u8, name: &str) -> Self {
+        self.function_code = Some(code);
+        self.function_name = Some(name.to_string());
+        self
+    }
+
+    /// Установить сырые данные в hex.
+    pub fn with_raw_data(mut self, data: &[u8]) -> Self {
+        self.raw_data = Some(bytes_to_hex(data));
+        self
+    }
+
+    /// Установить время обработки.
+    pub fn with_duration(mut self, duration_us: u64) -> Self {
+        self.duration_us = Some(duration_us);
+        self
+    }
+}
+
+/// Получить текущее время в формате ISO 8601.
+fn chrono_now_iso() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+
+    let secs = now.as_secs();
+    let millis = now.subsec_millis();
+
+    // Простой формат: секунды с эпохи + миллисекунды
+    // Для полного ISO 8601 нужна библиотека chrono, но для простоты используем timestamp
+    format!("{}.{:03}", secs, millis)
+}
+
+/// Преобразовать байты в hex-строку.
+fn bytes_to_hex(data: &[u8]) -> String {
+    data.iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Получить человекочитаемое название функции Modbus.
+pub fn function_code_name(code: u8) -> &'static str {
+    match code {
+        0x01 => "Read Coils",
+        0x02 => "Read Discrete Inputs",
+        0x03 => "Read Holding Registers",
+        0x04 => "Read Input Registers",
+        0x05 => "Write Single Coil",
+        0x06 => "Write Single Register",
+        0x0F => "Write Multiple Coils",
+        0x10 => "Write Multiple Registers",
+        _ => "Unknown Function",
     }
 }
