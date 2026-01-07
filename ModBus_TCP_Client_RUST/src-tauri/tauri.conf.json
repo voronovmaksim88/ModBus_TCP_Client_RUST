@@ -13,8 +13,9 @@
     "windows": [
       {
         "title": "modbus_tcp_client_rust",
-        "width": 800,
-        "height": 600
+
+        "width": 1280,
+        "height": 720
       }
     ],
     "security": {
