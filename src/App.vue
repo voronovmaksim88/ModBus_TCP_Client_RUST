@@ -365,7 +365,7 @@
                     <div class="log-entry-summary">{{ entry.summary }}</div>
                     <div v-if="entry.rawData" class="log-entry-raw">
                         <span class="raw-label">HEX:</span>
-                        <code>{{ entry.rawData }}</code>
+                        <code>{{ getRawDataDisplay(entry) }}</code>
                     </div>
                     <div v-if="entry.rawData" class="log-entry-raw-details">
                         <span class="raw-label">Расшифровка:</span>
@@ -893,6 +893,26 @@ function exceptionName(code?: number): string | undefined {
     }
 }
 
+function getRawDataDisplay(entry: LogEntry): string {
+    if (!entry.rawData) return "";
+    const bytes = parseHexBytes(entry.rawData);
+    if (bytes.length < 8) return entry.rawData;
+
+    const groups = [
+        formatBytes(bytes, 0, 2), // Transaction ID
+        formatBytes(bytes, 2, 2), // Protocol ID
+        formatBytes(bytes, 4, 2), // Length
+        formatBytes(bytes, 6, 1), // Unit ID
+        formatBytes(bytes, 7, 1), // Function
+    ];
+
+    if (bytes.length > 8) {
+        groups.push(formatBytes(bytes, 8, bytes.length - 8)); // Data
+    }
+
+    return groups.filter(Boolean).join(" | ");
+}
+
 function getRawDataParts(entry: LogEntry): RawDataPart[] {
     if (!entry.rawData) return [];
     const bytes = parseHexBytes(entry.rawData);
@@ -901,6 +921,7 @@ function getRawDataParts(entry: LogEntry): RawDataPart[] {
     const parts: RawDataPart[] = [];
 
     parts.push({ label: "Transaction ID", value: formatBytes(bytes, 0, 2) });
+    parts.push({ label: "Protocol ID", value: formatBytes(bytes, 2, 2) });
     parts.push({ label: "Length", value: formatBytes(bytes, 4, 2) });
     parts.push({ label: "Unit ID", value: formatBytes(bytes, 6, 1) });
 
