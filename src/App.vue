@@ -181,6 +181,7 @@
                                     type="text"
                                     class="cell-input"
                                     placeholder="Имя"
+                                    :disabled="serverStatus.running"
                                     @change="persistProject"
                                 />
                             </td>
@@ -188,6 +189,7 @@
                                 <select
                                     v-model="variable.area"
                                     class="cell-select"
+                                    :disabled="serverStatus.running"
                                     @change="persistProject"
                                 >
                                     <option value="coil">Coil (0x)</option>
@@ -209,6 +211,7 @@
                                     class="cell-input cell-input-number"
                                     min="0"
                                     max="65535"
+                                    :disabled="serverStatus.running"
                                     @change="onVariableAddressChange(variable)"
                                 />
                             </td>
@@ -216,6 +219,7 @@
                                 <select
                                     v-model="variable.dataType"
                                     class="cell-select"
+                                    :disabled="serverStatus.running"
                                     @change="persistProject"
                                 >
                                     <option value="bool">bool</option>
@@ -256,6 +260,7 @@
                                     type="text"
                                     class="cell-input"
                                     placeholder="Примечание"
+                                    :disabled="serverStatus.running"
                                     @change="persistProject"
                                 />
                             </td>
@@ -264,6 +269,7 @@
                                     class="btn small danger"
                                     type="button"
                                     @click="onRemoveVariable(variable.id)"
+                                    :disabled="serverStatus.running"
                                 >
                                     ✕
                                 </button>
@@ -1455,16 +1461,20 @@ async function onStopServer() {
         box-shadow 0.15s;
 }
 
+.btn:disabled {
+    cursor: default;
+    opacity: 0.6;
+    box-shadow: none;
+}
+
+.btn:disabled:hover {
+    background-color: inherit;
+    border-color: inherit;
+}
+
 .btn.primary {
     background-color: #396cd8;
     color: #ffffff;
-}
-
-/* Отключённая кнопка "Сохранить профиль" */
-.btn.primary:disabled {
-    background-color: #9bb4f0;
-    cursor: default;
-    opacity: 0.8;
 }
 
 .btn.primary:hover {
