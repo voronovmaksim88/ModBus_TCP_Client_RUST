@@ -332,7 +332,7 @@
                 </div>
             </header>
 
-            <div class="logs-container" ref="logsContainerRef">
+            <div class="logs-container">
                 <div
                     v-for="entry in logEntries"
                     :key="entry.id"
@@ -366,6 +366,24 @@
                     <div v-if="entry.rawData" class="log-entry-raw">
                         <span class="raw-label">HEX:</span>
                         <code>{{ entry.rawData }}</code>
+                    </div>
+                    <div v-if="entry.rawData" class="log-entry-raw-details">
+                        <span class="raw-label">Расшифровка:</span>
+                        <span class="raw-details">
+                            <span
+                                v-for="(part, idx) in getRawDataParts(entry)"
+                                :key="idx"
+                                class="raw-detail"
+                            >
+                                <strong>{{ part.value }}</strong>
+                                <span class="raw-detail-label">
+                                    — {{ part.label }}
+                                </span>
+                                <span v-if="part.note" class="raw-detail-note">
+                                    ({{ part.note }})
+                                </span>
+                            </span>
+                        </span>
                     </div>
                 </div>
 
@@ -406,6 +424,12 @@ interface LogEntry {
     summary: string;
     rawData?: string;
     durationUs?: number;
+}
+
+interface RawDataPart {
+    label: string;
+    value: string;
+    note?: string;
 }
 
 /**
@@ -565,7 +589,6 @@ const recentlyChangedIds = reactive(new Set<string>());
  * Записи логов
  */
 const logEntries = reactive<LogEntry[]>([]);
-const logsContainerRef = ref<HTMLElement | null>(null);
 let logUnlisten: UnlistenFn | null = null;
 
 /**
@@ -831,6 +854,167 @@ function formatLogTime(timestamp: string): string {
     const seconds = date.getSeconds().toString().padStart(2, "0");
 
     return `${hours}:${minutes}:${seconds}.${millis}`;
+}
+
+function parseHexBytes(raw: string): number[] {
+    return raw
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((b) => Number.parseInt(b, 16))
+        .filter((b) => Number.isFinite(b));
+}
+
+function toHexByte(value: number): string {
+    return value.toString(16).padStart(2, "0").toUpperCase();
+}
+
+function formatBytes(bytes: number[], start: number, length: number): string {
+    if (start < 0 || length <= 0 || start + length > bytes.length) {
+        return "";
+    }
+    return bytes
+        .slice(start, start + length)
+        .map((b) => toHexByte(b))
+        .join(" ");
+}
+
+function exceptionName(code?: number): string | undefined {
+    switch (code) {
+        case 0x01:
+            return "Illegal Function";
+        case 0x02:
+            return "Illegal Data Address";
+        case 0x03:
+            return "Illegal Data Value";
+        case 0x04:
+            return "Server Device Failure";
+        default:
+            return undefined;
+    }
+}
+
+function getRawDataParts(entry: LogEntry): RawDataPart[] {
+    if (!entry.rawData) return [];
+    const bytes = parseHexBytes(entry.rawData);
+    if (bytes.length < 8) return [];
+
+    const parts: RawDataPart[] = [];
+
+    parts.push({ label: "Transaction ID", value: formatBytes(bytes, 0, 2) });
+    parts.push({ label: "Length", value: formatBytes(bytes, 4, 2) });
+    parts.push({ label: "Unit ID", value: formatBytes(bytes, 6, 1) });
+
+    const functionCode = bytes[7];
+    const funcName = entry.functionName || undefined;
+    parts.push({
+        label: "Function",
+        value: formatBytes(bytes, 7, 1),
+        note: funcName,
+    });
+
+    const dataStart = 8;
+    const dataBytes = bytes.slice(dataStart);
+    const isErrorResponse = (functionCode & 0x80) !== 0;
+
+    if (isErrorResponse) {
+        const code = dataBytes[0];
+        parts.push({
+            label: "Exception",
+            value: formatBytes(bytes, 8, 1),
+            note: exceptionName(code),
+        });
+        return parts;
+    }
+
+    const isRequest = entry.entryType === "request";
+
+    switch (functionCode) {
+        case 0x01:
+        case 0x02:
+        case 0x03:
+        case 0x04: {
+            if (isRequest && dataBytes.length >= 4) {
+                parts.push({
+                    label: "Start address",
+                    value: formatBytes(bytes, 8, 2),
+                });
+                parts.push({
+                    label: "Quantity",
+                    value: formatBytes(bytes, 10, 2),
+                });
+            } else if (dataBytes.length >= 1) {
+                parts.push({
+                    label: "Byte count",
+                    value: formatBytes(bytes, 8, 1),
+                });
+                if (dataBytes.length > 1) {
+                    parts.push({
+                        label: "Data",
+                        value: formatBytes(bytes, 9, dataBytes.length - 1),
+                    });
+                }
+            }
+            break;
+        }
+        case 0x05:
+        case 0x06: {
+            if (dataBytes.length >= 4) {
+                parts.push({
+                    label: "Address",
+                    value: formatBytes(bytes, 8, 2),
+                });
+                parts.push({
+                    label: "Value",
+                    value: formatBytes(bytes, 10, 2),
+                });
+            }
+            break;
+        }
+        case 0x0f:
+        case 0x10: {
+            if (isRequest && dataBytes.length >= 5) {
+                parts.push({
+                    label: "Start address",
+                    value: formatBytes(bytes, 8, 2),
+                });
+                parts.push({
+                    label: "Quantity",
+                    value: formatBytes(bytes, 10, 2),
+                });
+                parts.push({
+                    label: "Byte count",
+                    value: formatBytes(bytes, 12, 1),
+                });
+                if (dataBytes.length > 5) {
+                    parts.push({
+                        label: "Data",
+                        value: formatBytes(bytes, 13, dataBytes.length - 5),
+                    });
+                }
+            } else if (dataBytes.length >= 4) {
+                parts.push({
+                    label: "Start address",
+                    value: formatBytes(bytes, 8, 2),
+                });
+                parts.push({
+                    label: "Quantity",
+                    value: formatBytes(bytes, 10, 2),
+                });
+            }
+            break;
+        }
+        default: {
+            if (dataBytes.length > 0) {
+                parts.push({
+                    label: "Data",
+                    value: formatBytes(bytes, 8, dataBytes.length),
+                });
+            }
+            break;
+        }
+    }
+
+    return parts;
 }
 
 /**
@@ -1547,6 +1731,32 @@ async function onStopServer() {
     font-size: 0.75rem;
     color: #666;
     margin-top: 0.25rem;
+}
+
+.log-entry-raw-details {
+    font-size: 0.75rem;
+    color: #555;
+    margin-top: 0.2rem;
+}
+
+.raw-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.6rem;
+}
+
+.raw-detail {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.2rem;
+}
+
+.raw-detail-label {
+    color: #666;
+}
+
+.raw-detail-note {
+    color: #888;
 }
 
 .log-entry-raw .raw-label {

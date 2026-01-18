@@ -18,10 +18,11 @@ use crate::modbus_protocol::ExceptionCode;
 use crate::types::{ModbusArea, ModbusDataType, ModbusValue, ModbusVariable};
 
 /// Размер по умолчанию для каждой области данных.
-const DEFAULT_COILS_SIZE: usize = 10000;
-const DEFAULT_DISCRETE_INPUTS_SIZE: usize = 10000;
-const DEFAULT_INPUT_REGISTERS_SIZE: usize = 10000;
-const DEFAULT_HOLDING_REGISTERS_SIZE: usize = 10000;
+/// 65536 адресов (0..=65535), чтобы покрыть полный диапазон Modbus.
+const DEFAULT_COILS_SIZE: usize = 65536;
+const DEFAULT_DISCRETE_INPUTS_SIZE: usize = 65536;
+const DEFAULT_INPUT_REGISTERS_SIZE: usize = 65536;
+const DEFAULT_HOLDING_REGISTERS_SIZE: usize = 65536;
 
 /// Потокобезопасное хранилище данных Modbus.
 #[derive(Debug)]
