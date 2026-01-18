@@ -1130,14 +1130,27 @@ watch(
  * Добавить новую переменную с дефолтными значениями.
  */
 function onAddVariable() {
+    const lastVar = project.variables[project.variables.length - 1];
+    const defaultArea: ModbusArea = "holding_register";
+    const defaultType: ModbusDataType = "uint16";
+
+    const dataType = lastVar?.dataType ?? defaultType;
+    const area = lastVar?.area ?? defaultArea;
+    const step =
+        dataType === "bool" || dataType === "int16" || dataType === "uint16"
+            ? 1
+            : 2;
+    const baseAddress =
+        lastVar && Number.isFinite(lastVar.address) ? lastVar.address : 0;
+
     const newVar: ModbusVariable = {
         id: generateId("var"),
         name: "NewVar",
-        area: "holding_register",
+        area,
 
-        address: 0,
+        address: lastVar ? baseAddress + step : 0,
 
-        dataType: "uint16",
+        dataType,
 
         value: 0,
 
