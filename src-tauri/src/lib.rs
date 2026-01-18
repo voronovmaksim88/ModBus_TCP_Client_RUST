@@ -42,6 +42,8 @@ pub fn run() {
             commands::get_variables,
             commands::reload_variables,
             commands::clear_data_store,
+            commands::load_project_file,
+            commands::save_project_file,
         ])
         .run(tauri::generate_context!())
         .expect("Ошибка при запуске Tauri-приложения");

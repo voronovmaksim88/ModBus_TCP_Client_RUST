@@ -6,7 +6,43 @@ use tauri::{AppHandle, State};
 
 use crate::data_store::SharedDataStore;
 use crate::server::SharedModbusServer;
-use crate::types::{ModbusConnectionProfile, ModbusValue, ModbusVariable, ServerStatus};
+use crate::types::{
+    ModbusConnectionProfile, ModbusProject, ModbusValue, ModbusVariable, ServerStatus,
+};
+
+fn project_file_path(_app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Не удалось получить путь к exe: {e}"))?;
+    let dir = exe_path
+        .parent()
+        .ok_or("Не удалось определить каталог приложения")?;
+    Ok(dir.join("modbus_project.json"))
+}
+
+/// Загрузить проект из файла рядом с приложением.
+#[tauri::command]
+pub fn load_project_file(app_handle: AppHandle) -> Result<Option<ModbusProject>, String> {
+    let path = project_file_path(&app_handle)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let data = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Не удалось прочитать файл проекта: {e}"))?;
+    let project: ModbusProject =
+        serde_json::from_str(&data).map_err(|e| format!("Ошибка JSON проекта: {e}"))?;
+    Ok(Some(project))
+}
+
+/// Сохранить проект в файл рядом с приложением.
+#[tauri::command]
+pub fn save_project_file(app_handle: AppHandle, project: ModbusProject) -> Result<(), String> {
+    let path = project_file_path(&app_handle)?;
+    let data = serde_json::to_string_pretty(&project)
+        .map_err(|e| format!("Не удалось сериализовать проект: {e}"))?;
+    std::fs::write(&path, data)
+        .map_err(|e| format!("Не удалось записать файл проекта: {e}"))?;
+    Ok(())
+}
 
 /// Состояние приложения, управляемое Tauri.
 pub struct AppState {

@@ -378,7 +378,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -474,8 +474,6 @@ interface ModbusProject {
     currentProfileId: ModbusConnectionProfileId | null;
     variables: ModbusVariable[];
 }
-
-const STORAGE_KEY = "modbus_project_v1";
 
 /**
  * Server status interface (mirrors Rust ServerStatus)
@@ -605,7 +603,7 @@ const isProfileDirty = computed(() => {
 });
 
 /**
- * Загрузка проекта из localStorage при старте
+ * Загрузка проекта из файла при старте
  */
 onMounted(async () => {
     // Подписываемся на события логирования от Rust
@@ -648,15 +646,15 @@ onMounted(async () => {
     }, 1000);
 
     try {
-        const raw = window.localStorage.getItem(STORAGE_KEY);
-        if (!raw) {
+        const loaded = await invoke<ModbusProject | null>("load_project_file");
+        if (!loaded) {
             const defProject = createDefaultProject();
             assignProject(defProject);
             applyProfileToEditable(defProject.profiles[0]);
             return;
         }
 
-        const parsed = JSON.parse(raw) as Partial<ModbusProject>;
+        const parsed = loaded as Partial<ModbusProject>;
 
         if (
             !parsed ||
@@ -750,7 +748,7 @@ function highlightChangedVariable(id: string) {
 
 /**
  * Обработчик изменения значения переменной пользователем.
- * Сохраняет в localStorage и отправляет на бэкенд (если сервер запущен).
+ * Сохраняет проект в файл и отправляет на бэкенд (если сервер запущен).
  */
 async function onVariableValueChange(variable: ModbusVariable) {
     persistProject();
@@ -1066,7 +1064,7 @@ function validateProfile(profile: ModbusConnectionProfile): string | null {
 }
 
 /**
- * Сохранение профиля в проект и в localStorage
+ * Сохранение профиля в проект и файл
  */
 function onSaveProfile() {
     const err = validateProfile(editableProfile);
@@ -1099,12 +1097,12 @@ function onSaveProfile() {
 }
 
 /**
- * Сохранение проекта в localStorage
+ * Сохранение проекта в файл рядом с приложением
  */
-function persistProject() {
+async function persistProject() {
     try {
-        const payload = JSON.stringify(project);
-        window.localStorage.setItem(STORAGE_KEY, payload);
+        const payload = toRaw(project);
+        await invoke("save_project_file", { project: payload });
         const now = new Date();
         lastSavedAt.value = now.toLocaleString();
     } catch (e) {
