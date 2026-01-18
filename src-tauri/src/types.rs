@@ -52,7 +52,6 @@ pub struct ModbusConnectionProfile {
     pub host: String,
     pub port: u16,
     pub unit_id: u8,
-    pub auto_reconnect: bool,
 }
 
 impl Default for ModbusConnectionProfile {
@@ -63,7 +62,6 @@ impl Default for ModbusConnectionProfile {
             host: "127.0.0.1".to_string(),
             port: 502,
             unit_id: 1,
-            auto_reconnect: true,
         }
     }
 }

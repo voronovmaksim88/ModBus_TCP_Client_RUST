@@ -118,18 +118,6 @@
                     </div>
                 </div>
 
-                <div class="form-row checkbox-row">
-                    <label class="checkbox-label" for="profile-auto-reconnect">
-                        <input
-                            id="profile-auto-reconnect"
-                            v-model="editableProfile.autoReconnect"
-                            type="checkbox"
-                        />
-                        Автоматически запускать эмулятор при старте
-                        (зарезервировано)
-                    </label>
-                </div>
-
                 <div v-if="validationError" class="validation-error">
                     {{ validationError }}
                 </div>
@@ -141,13 +129,6 @@
                         :disabled="!isProfileDirty"
                     >
                         Сохранить профиль
-                    </button>
-                    <button
-                        class="btn secondary"
-                        type="button"
-                        @click="onResetToDefaults"
-                    >
-                        Сбросить по умолчанию
                     </button>
                 </div>
 
@@ -456,7 +437,6 @@ interface ModbusConnectionProfile {
     host: string;
     port: number;
     unitId: number;
-    autoReconnect: boolean;
 }
 
 interface ModbusVariable {
@@ -530,7 +510,6 @@ function createDefaultProfile(): ModbusConnectionProfile {
         host: "127.0.0.1",
         port: 502,
         unitId: 1,
-        autoReconnect: true,
     };
 }
 
@@ -621,9 +600,7 @@ const isProfileDirty = computed(() => {
         editableProfile.name.trim() !== current.name ||
         editableProfile.host.trim() !== current.host ||
         Number(editableProfile.port) !== current.port ||
-        Number(editableProfile.unitId) !== current.unitId ||
-        Boolean(editableProfile.autoReconnect) !==
-            Boolean(current.autoReconnect)
+        Number(editableProfile.unitId) !== current.unitId
     );
 });
 
@@ -1056,7 +1033,6 @@ function applyProfileToEditable(profile: ModbusConnectionProfile) {
     editableProfile.host = profile.host;
     editableProfile.port = profile.port;
     editableProfile.unitId = profile.unitId;
-    editableProfile.autoReconnect = profile.autoReconnect;
 }
 
 /**
@@ -1109,7 +1085,6 @@ function onSaveProfile() {
         host: editableProfile.host.trim(),
         port: Number(editableProfile.port),
         unitId: Number(editableProfile.unitId),
-        autoReconnect: !!editableProfile.autoReconnect,
     };
 
     if (existingIndex >= 0) {
@@ -1120,17 +1095,6 @@ function onSaveProfile() {
 
     project.currentProfileId = toSave.id;
 
-    persistProject();
-}
-
-/**
- * Сброс профиля к значениям по умолчанию
- */
-function onResetToDefaults() {
-    const defProject = createDefaultProject();
-    assignProject(defProject);
-    applyProfileToEditable(defProject.profiles[0]);
-    validationError.value = null;
     persistProject();
 }
 
