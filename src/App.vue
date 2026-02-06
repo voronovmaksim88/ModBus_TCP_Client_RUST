@@ -266,10 +266,10 @@
                             </td>
                             <td class="cell-actions">
                                 <button
+                                    v-if="!serverStatus.running"
                                     class="btn small danger"
                                     type="button"
                                     @click="onRemoveVariable(variable.id)"
-                                    :disabled="serverStatus.running"
                                 >
                                     ✕
                                 </button>
@@ -384,7 +384,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from "vue";
+import {
+    computed,
+    onMounted,
+    onUnmounted,
+    reactive,
+    ref,
+    toRaw,
+    watch,
+} from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
